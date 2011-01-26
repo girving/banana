@@ -111,6 +111,15 @@ def print_tree(tree):
         table[tuple(x-min)] = c.upper()
     for r in xrange(len(table)):
         print '   ',' '.join(table[r])
+    # Blah
+    if 0:
+        nodes = tree.nodes()
+        for n in nodes:
+            if n.word=='grout':
+                print 'grout has %d children: %s'%(len(n.children),' '.join(c.word for c in n.children))
+            for c in n.children:
+                if c.word=='gled':
+                    print 'gled beneath',n.word
 
 def check_start(m,x,t):
     return not (tuple(x+t) in m or tuple(x-t) in m)
@@ -170,7 +179,7 @@ def grow_tree_exhaustive(tree,letters):
     nodes = list(tree.nodes())
     for n in xrange(min(len(letters),max_length-1),0,-1):
         for subset in subsets(letters,n):
-            for node in nodes:
+            for i,node in enumerate(nodes):
                 s,t = direction(node.d),direction(1-node.d)
                 for j in xrange(len(node.word)):
                     x = node.x+j*s
@@ -182,8 +191,20 @@ def grow_tree_exhaustive(tree,letters):
                         for k in xrange(len(word)):
                             if word[k]==node.word[j] and check_space(m,x,t,word,k):
                                 child = Node(word,x-k*t,1-node.d,k)
-                                node.children.append(child)
-                                yield tree,subtract(letters,subset),word
+                                if 0 and word=='rec':
+                                    print '---------------------'
+                                    print 'adding rec'
+                                    print 'child count:',len(node.children)
+                                new_tree = copy.deepcopy(tree)
+                                new_node = list(new_tree.nodes())[i]
+                                new_node.children.append(child)
+                                if 0 and word=='rec':
+                                    print 'child count:',len(new_node.children)
+                                    print_tree(tree)
+                                    print '---'
+                                    print_tree(new_tree)
+                                    print '---------------------'
+                                yield new_tree,subtract(letters,subset),word
 
 def prune_tree(tree,letters):
     nodes = list(tree.nodes())
@@ -225,10 +246,11 @@ def pruned_trees(tree,letters):
         old,next = next,[]
         for t,l,words in old:
             for tt,ll,word in singly_pruned_trees(t,l):
-                if 0:
+                if word=='gled':
                     print '----------------------'
                     print 'prune',words,word
                     print_tree(t)
+                    print '----'
                     print_tree(tt)
                     print '----------------------'
                 next.append((tt,ll,words+(word,)))
@@ -236,16 +258,25 @@ def pruned_trees(tree,letters):
             s = t.signature()
             if s not in done:
                 done.add(s)
-                print 'maybe pruning %s (letters = %s)'%(', '.join(w),l)
                 #print_tree(t)
-                yield copy.deepcopy(t),l,w
+                if 1 or l not in 'tgrd tgrl tgrtth tgrdl tgrdtth tgrltth tgrdltth'.split():
+                    print 'maybe pruning %s (letters = %s)'%(', '.join(w),l)
+                    yield copy.deepcopy(t),l,w
 
-def finish_tree(tree,letters):
+def finish_tree(tree,letters,bad):
+    tree = copy.deepcopy(tree)
     if not letters:
         yield tree,[]
-    for tree,letters,word in grow_tree_exhaustive(tree,letters):
-        for tree,words in finish_tree(tree,letters):
-            yield tree,[word]+words
+    else:
+        for tree,letters,word in grow_tree_exhaustive(tree,letters):
+            s = tree.signature(),sort_word(letters)
+            if s not in bad:
+                success = False
+                for tree,words in finish_tree(tree,letters,bad):
+                    success = True
+                    yield tree,[word]+words
+                if not success:
+                    bad.add(s)
 
 def greedily_expand_tree(tree,letters):
     words = []
@@ -263,8 +294,9 @@ def greedily_expand_tree(tree,letters):
     return tree,letters,words
 
 def fix_tree(tree,letters):
+    bad = set([(tree.signature(),sort_word(letters))])
     for tree,letters,pruned in pruned_trees(tree,letters):
-        for tree,added in finish_tree(tree,letters):
+        for tree,added in finish_tree(tree,letters,bad):
             print 'pruned %s'%', '.join(pruned)
             print 'added %s'%', '.join(added)
             return tree
@@ -275,9 +307,10 @@ def build_tree(tree,letters,verbose=0):
     if words:
         print 'add %s'%(', '.join(words))
         print_tree(tree)
-        print 'letters =',letters
     if letters:
+        print 'letters =',letters
         tree = fix_tree(tree,letters)
+        print_tree(tree)
     return tree
 
 def play():
@@ -290,10 +323,9 @@ def play():
             break
     tree = None
     while 1:
-        tree,letters = build_tree(tree,letters)
-        print
-        print_tree(tree)
-        print
+        tree = build_tree(tree,letters)
+        letters = ''
+        print '--------------------------'
         while 1:
             peel = raw_input('next letter: ').lower()
             if not re.match('^[a-z]$',peel):
@@ -308,9 +340,6 @@ def autoplay():
     for c in 'abcdefg':
         tree = build_tree(tree,letters)
         letters = ''
-        print
-        print_tree(tree)
-        print
         print '--------------------------'
         print
         print 'peel:',c
@@ -325,7 +354,7 @@ if __name__=='__main__':
             print random_word(letters)
         else:
             build_tree(None,letters)
-    elif 1:
+    elif 0:
         random.seed(1731)
         autoplay()
     else:
