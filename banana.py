@@ -3,6 +3,7 @@
 import os
 import re
 from numpy import *
+import copy
 
 def read_words(max_length):
     words = open('words').read().lower().split()
@@ -26,6 +27,17 @@ def random_subset(s,n):
         r += s[i]
         s = s[:i] + s[i+1:]
     return r
+
+def subsets(s,n):
+    """Return all substrings of size n."""
+    if not n:
+        yield ''
+    else:
+        n -= 1
+        for i in xrange(len(s)-n):
+            c = s[i]
+            for sp in subsets(s[i+1:],n):
+                yield c+sp
 
 def subtract(a,b):
     for c in b:
@@ -59,6 +71,12 @@ class Node(object):
         self.parent = parent
         self.children = []
 
+    def __deepcopy__(self,m):
+        n = Node(self.word,self.x,self.d,self.parent)
+        for c in self.children:
+            n.children.append(copy.deepcopy(c,m))
+        return n
+
     def _map(self,m):
         d = direction(self.d)
         for i in xrange(len(self.word)):
@@ -77,6 +95,9 @@ class Node(object):
             for n in c.nodes():
                 yield n
 
+    def signature(self):
+        return (self.word,tuple(self.x),self.d,self.parent,tuple(c.signature() for c in self.children))
+
 def print_tree(tree):
     m = tree.map()
     min = zeros(2,dtype=int)
@@ -89,15 +110,31 @@ def print_tree(tree):
     for x,c in m.iteritems():
         table[tuple(x-min)] = c.upper()
     for r in xrange(len(table)):
-        print ''.join(table[r])
+        print '   ',' '.join(table[r])
 
-def grow_tree(tree,letters):
+def check_start(m,x,t):
+    return not (tuple(x+t) in m or tuple(x-t) in m)
+
+def check_space(m,x,t,word,k):
+    s = (1,1)-t
+    for l in xrange(1,k+1):
+        xp = x-l*t
+        if tuple(xp-t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
+            return False
+    for l in xrange(1,len(word)-k):
+        xp = x+l*t
+        if tuple(xp+t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
+            return False
+    return True
+
+def grow_tree(tree,letters,attempts=20000):
     m = tree.map()
     nodes = list(tree.nodes())
-    N = xrange(min(len(letters),max_length-1),1,-1)
-    for attempt in xrange(100):
+    N = xrange(min(len(letters),max_length-1),0,-1)
+    while attempts>=0:
         for n in N:
             for _ in xrange(100):
+                attempts -= 1
                 # Pick a random node
                 i = random.randint(len(nodes))
                 node = nodes[i]
@@ -105,10 +142,8 @@ def grow_tree(tree,letters):
                 j = random.randint(len(node.word))
                 s,t = direction(node.d),direction(1-node.d)
                 x = node.x+j*s
-                if tuple(x+t) in m or tuple(x-t) in m:
+                if not check_start(m,x,t):
                     continue
-                if 0:
-                    print 'start: %s, %s'%(node.word,node.word[j])
                 # Pick a random set of letters and see if they make a word
                 subset = random_subset(letters,n)
                 try:
@@ -121,25 +156,34 @@ def grow_tree(tree,letters):
                 places = [k for k in xrange(len(word)) if word[k]==node.word[j]]
                 k = places[random.randint(len(places))]
                 # Check if the attachment point fits
-                fail = 0
-                for l in xrange(1,k+1):
-                    xp = x-l*t
-                    if tuple(xp-t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
-                        fail = 1 
-                        break
-                for l in xrange(1,len(word)-k):
-                    xp = x+l*t
-                    if tuple(xp+t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
-                        fail = 1
-                        break
-                if fail:
-                    break
+                if not check_space(m,x,t,word,k):
+                    continue
                 # Add word to the tree
                 print 'add',word
                 child = Node(word,x-k*t,1-node.d,k)
                 node.children.append(child)
                 return tree,subtract(letters,subset)
     return None
+
+def grow_tree_exhaustive(tree,letters):
+    m = tree.map()
+    nodes = list(tree.nodes())
+    for n in xrange(min(len(letters),max_length-1),0,-1):
+        for subset in subsets(letters,n):
+            for node in nodes:
+                s,t = direction(node.d),direction(1-node.d)
+                for j in xrange(len(node.word)):
+                    x = node.x+j*s
+                    if check_start(m,x,t):
+                        try:
+                            word = dictionary[sort_word(node.word[j]+subset)]
+                        except KeyError:
+                            continue
+                        for k in xrange(len(word)):
+                            if word[k]==node.word[j] and check_space(m,x,t,word,k):
+                                child = Node(word,x-k*t,1-node.d,k)
+                                node.children.append(child)
+                                yield tree,subtract(letters,subset),word
 
 def prune_tree(tree,letters):
     nodes = list(tree.nodes())
@@ -158,31 +202,89 @@ def prune_tree(tree,letters):
             tree = None
         return tree,letters
 
-def build_tree(tree,letters,verbose=0):
+def singly_pruned_trees(tree,letters):
+    nodes = list(enumerate(tree.nodes()))
+    nodes.sort(key=lambda n:len(n[1].word))
+    for i,node in nodes:
+        if not node.children:
+            new_letters = letters + node.word 
+            if node.parent>=0:
+                new_tree = copy.deepcopy(tree) 
+                new_nodes = list(new_tree.nodes())
+                node = new_nodes[i]
+                parent, = [n for n in new_nodes if node in n.children]
+                parent.children.remove(node)
+                new_letters = subtract(new_letters,node.word[node.parent])
+                yield new_tree,new_letters,node.word
+
+def pruned_trees(tree,letters):
+    done = set()
+    done.add(tree.signature())
+    next = [(tree,letters,())]
+    while 1:
+        old,next = next,[]
+        for t,l,words in old:
+            for tt,ll,word in singly_pruned_trees(t,l):
+                if 0:
+                    print '----------------------'
+                    print 'prune',words,word
+                    print_tree(t)
+                    print_tree(tt)
+                    print '----------------------'
+                next.append((tt,ll,words+(word,)))
+        for t,l,w in next:
+            s = t.signature()
+            if s not in done:
+                done.add(s)
+                print 'maybe pruning %s (letters = %s)'%(', '.join(w),l)
+                #print_tree(t)
+                yield copy.deepcopy(t),l,w
+
+def finish_tree(tree,letters):
+    if not letters:
+        yield tree,[]
+    for tree,letters,word in grow_tree_exhaustive(tree,letters):
+        for tree,words in finish_tree(tree,letters):
+            yield tree,[word]+words
+
+def greedily_expand_tree(tree,letters):
+    words = []
+    if tree is None:
+        w = random_word(letters)
+        words.append(w)
+        letters = subtract(letters,w)
+        tree = Node(w,(0,0),1,-1)
     while letters:
-        print 'letters =',sort_word(letters)
-        if tree is None:
-            w = random_word(letters)
-            print 'start:',w
-            letters = subtract(letters,w)
-            tree = Node(w,(0,0),1,-1)
-        else:
-            grow = grow_tree(tree,letters)
-            if grow:
-                tree,letters = grow
-            else:
-                tree,letters = prune_tree(tree,letters)
-        if verbose:
-            print
-            print_tree(tree)
-            print
-    return tree,letters
+        try:
+            tree,letters,word = grow_tree_exhaustive(tree,letters).next()
+            words.append(word)
+        except StopIteration:
+            break
+    return tree,letters,words
+
+def fix_tree(tree,letters):
+    for tree,letters,pruned in pruned_trees(tree,letters):
+        for tree,added in finish_tree(tree,letters):
+            print 'pruned %s'%', '.join(pruned)
+            print 'added %s'%', '.join(added)
+            return tree
+    raise RuntimeError('failed')
+
+def build_tree(tree,letters,verbose=0):
+    tree,letters,words = greedily_expand_tree(tree,letters)
+    if words:
+        print 'add %s'%(', '.join(words))
+        print_tree(tree)
+        print 'letters =',letters
+    if letters:
+        tree = fix_tree(tree,letters)
+    return tree
 
 def play():
     letter_pattern = re.compile('^[a-z]+$')
     while 1:
         letters = raw_input('starting letters: ').lower()
-        if not re.match('^[a-z]{21}$',letters):
+        if not re.match('^[a-z]{21,}$',letters):
             print 'bad initial letters'
         else:
             break
@@ -200,6 +302,20 @@ def play():
                 letters += peel
                 break
 
+def autoplay():
+    letters = 'iremkjuwlohdtdlttgrae'
+    tree = None
+    for c in 'abcdefg':
+        tree = build_tree(tree,letters)
+        letters = ''
+        print
+        print_tree(tree)
+        print
+        print '--------------------------'
+        print
+        print 'peel:',c
+        letters += c
+
 if __name__=='__main__':
     if 0:
         letters = 'retain'
@@ -209,5 +325,8 @@ if __name__=='__main__':
             print random_word(letters)
         else:
             build_tree(None,letters)
+    elif 1:
+        random.seed(1731)
+        autoplay()
     else:
         play()
