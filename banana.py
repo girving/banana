@@ -14,13 +14,23 @@ def read_words(max_length):
         keep.append(word)
     return keep
 
+def read_common_words(max_length):
+    valid = frozenset(read_words(max_length))
+    pattern = re.compile(r'^\d+\s+([a-z]+)\s+\d+$')
+    for line in open('common'):
+        m = pattern.match(line)
+        if m:
+            word = m.group(1)
+            if word in valid:
+                yield word
+
 def sort_word(word):
     return ''.join(sorted(word))
 
 # Build dictionary
 max_length = 7
 dictionary = {}
-for w in read_words(max_length):
+for w in read_common_words(max_length):
     sw = sort_word(w)
     dictionary[sw] = dictionary.get(sw,()) + (w,)
 print 'sorted word count =',len(dictionary)
