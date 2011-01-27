@@ -18,7 +18,7 @@ def sort_word(word):
     return ''.join(sorted(word))
 
 # Build dictionary
-max_length = 5
+max_length = 7
 dictionary = {}
 for w in read_words(max_length):
     sw = sort_word(w)
