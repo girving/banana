@@ -17,11 +17,16 @@ def read_words(max_length):
 def sort_word(word):
     return ''.join(sorted(word))
 
+# Build dictionary
 max_length = 5
-dictionary = dict((sort_word(w),w) for w in read_words(max_length))
-print 'word count =',len(dictionary)
+dictionary = {}
+for w in read_words(max_length):
+    sw = sort_word(w)
+    dictionary[sw] = dictionary.get(sw,()) + (w,)
+print 'sorted word count =',len(dictionary)
+print 'word count =',sum(len(w) for w in dictionary.itervalues())
 for sw,w in tuple(dictionary.items()):
-    for j in xrange(len(w)):
+    for j in xrange(len(sw)):
         swp = sw[j] + sw[:j] + sw[j+1:]
         dictionary[swp] = w
 print 'expanded dictionary size =',len(dictionary)
@@ -58,7 +63,8 @@ def random_word(letters):
             for _ in xrange(100):
                 s = sort_word(random_subset(letters,n))
                 try:
-                    return dictionary[s]
+                    words = dictionary[s]
+                    return words[random.randint(len(words))]
                 except KeyError:
                     pass
 
@@ -131,43 +137,46 @@ def print_tree(tree):
     for r in xrange(len(table)):
         print '   ',' '.join(table[r])
 
-def check_start(m,x,t):
-    return not (tuple(x+t) in m or tuple(x-t) in m)
-
-def check_space(m,x,t,word,k):
-    s = 1-t
-    for l in xrange(1,k+1):
-        xp = x-l*t
-        if tuple(xp-t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
-            return False
-    for l in xrange(1,len(word)-k):
-        xp = x+l*t
+def measure_space(m,x,t):
+    s = 1-absolute(t)
+    space = 0
+    xp = x.copy()
+    while space<max_length:
+        xp += t
         if tuple(xp+t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
-            return False
-    return True
+            break
+        space += 1
+    return space
 
 def grow_tree(tree,letters):
+    # Build list of start points
     m = tree.map()
     nodes = tuple(tree.nodes())
+    starts = []
+    for i,node in enumerate(nodes):
+        s,t = directions[node.d],directions[1-node.d]
+        for j in xrange(len(node.word)):
+            c = node.word[j]
+            x = node.x+j*s
+            if tuple(x+t) not in m and tuple(x-t) not in m:
+                before = measure_space(m,x,-t)
+                after  = measure_space(m,x, t)
+                if before or after:
+                    starts.append((c,before,after,(i,x)))
+    # Try all possible subsets everywhere
     for n in xrange(min(len(letters),max_length-1),0,-1):
         for subset in subsets(letters,n):
             subset = sort_word(subset)
-            for i,node in enumerate(nodes):
-                s,t = directions[node.d],directions[1-node.d]
-                for j in xrange(len(node.word)):
-                    try:
-                        word = dictionary[node.word[j]+subset]
-                    except KeyError:
-                        continue
-                    x = node.x+j*s
-                    if check_start(m,x,t):
-                        for k in xrange(len(word)):
-                            if word[k]==node.word[j] and check_space(m,x,t,word,k):
-                                child = Node(word,x-k*t,1-node.d,k)
-                                new_tree = copy.deepcopy(tree)
-                                new_node = list(new_tree.nodes())[i]
-                                new_node.children.append(child)
-                                yield new_tree,subtract(letters,subset),word
+            for c,before,after,ix in starts:
+                for word in dictionary.get(c+subset,()):
+                    for k in xrange(len(word)):
+                        if word[k]==c and before>=k and after>=len(word)-1-k:
+                            i,x = ix
+                            new_tree = copy.deepcopy(tree)
+                            node = list(new_tree.nodes())[i]
+                            d = 1-node.d
+                            node.children.append(Node(word,x-k*directions[d],d,k))
+                            yield new_tree,subtract(letters,subset),word
 
 def singly_pruned_trees(tree,letters):
     nodes = list(enumerate(tree.nodes()))
