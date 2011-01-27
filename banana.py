@@ -19,6 +19,12 @@ def sort_word(word):
 
 max_length = 5
 dictionary = dict((sort_word(w),w) for w in read_words(max_length))
+print 'word count =',len(dictionary)
+for sw,w in tuple(dictionary.items()):
+    for j in xrange(len(w)):
+        swp = sw[j] + sw[:j] + sw[j+1:]
+        dictionary[swp] = w
+print 'expanded dictionary size =',len(dictionary)
 
 def random_subset(s,n):
     r = ''
@@ -56,10 +62,7 @@ def random_word(letters):
                 except KeyError:
                     pass
 
-def direction(d):
-    dir = zeros(2,dtype=int)
-    dir[d] = 1
-    return dir
+directions = (array([1,0]),array([0,1]))
 
 class Node(object):
     __slots__ = ['word','x','d','parent','children']
@@ -78,7 +81,7 @@ class Node(object):
         return n
 
     def _map(self,m):
-        d = direction(self.d)
+        d = directions[self.d]
         for i in xrange(len(self.word)):
             m[tuple(self.x+i*d)] = self.word[i]
         for c in self.children:
@@ -88,6 +91,22 @@ class Node(object):
         m = {}
         self._map(m) 
         return m
+
+    def mask(self):
+        min = zeros(2,dtype=int)
+        max = zeros(2,dtype=int)
+        nodes = tuple(self.nodes())
+        for n in nodes:
+            min = minimum(min,n.x)
+            max = maximum(max,n.x+(len(n.word)-1)*directions[n.d])
+        min -= max_length+1
+        max += max_length+1
+        mask = zeros(max-min+1,dtype=bool)
+        for n in nodes:
+            d = directions[n.d]
+            for j in xrange(len(n.word)):
+                mask[tuple(n.x+j*d-min)] = True
+        return min,mask
 
     def nodes(self):
         yield self
@@ -116,7 +135,7 @@ def check_start(m,x,t):
     return not (tuple(x+t) in m or tuple(x-t) in m)
 
 def check_space(m,x,t,word,k):
-    s = (1,1)-t
+    s = 1-t
     for l in xrange(1,k+1):
         xp = x-l*t
         if tuple(xp-t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
@@ -129,18 +148,19 @@ def check_space(m,x,t,word,k):
 
 def grow_tree(tree,letters):
     m = tree.map()
-    nodes = list(tree.nodes())
+    nodes = tuple(tree.nodes())
     for n in xrange(min(len(letters),max_length-1),0,-1):
         for subset in subsets(letters,n):
+            subset = sort_word(subset)
             for i,node in enumerate(nodes):
-                s,t = direction(node.d),direction(1-node.d)
+                s,t = directions[node.d],directions[1-node.d]
                 for j in xrange(len(node.word)):
+                    try:
+                        word = dictionary[node.word[j]+subset]
+                    except KeyError:
+                        continue
                     x = node.x+j*s
                     if check_start(m,x,t):
-                        try:
-                            word = dictionary[sort_word(node.word[j]+subset)]
-                        except KeyError:
-                            continue
                         for k in xrange(len(word)):
                             if word[k]==node.word[j] and check_space(m,x,t,word,k):
                                 child = Node(word,x-k*t,1-node.d,k)
@@ -257,9 +277,14 @@ def play():
 def autoplay():
     letters = 'iremkjuwlohdtdlttgrae'
     tree = None
-    for c in 'abcdefg':
+    s = None
+    for c in 'abcdefg ':
         tree = build_tree(tree,letters)
         letters = ''
+        s = hash((s,tree.signature()))
+        print 'hash =',s
+        if c==' ':
+            break
         print '--------------------------'
         print
         print 'peel:',c
