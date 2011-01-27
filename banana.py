@@ -137,13 +137,11 @@ def print_tree(tree):
     for r in xrange(len(table)):
         print '   ',' '.join(table[r])
 
-def measure_space(m,x,t):
-    s = 1-absolute(t)
+def measure_space(m,x,s,t):
     space = 0
-    xp = x.copy()
     while space<max_length:
-        xp += t
-        if tuple(xp+t) in m or tuple(xp-s) in m or tuple(xp+s) in m:
+        x = x+t
+        if tuple(x+t) in m or tuple(x-s) in m or tuple(x+s) in m:
             break
         space += 1
     return space
@@ -159,8 +157,8 @@ def grow_tree(tree,letters):
             c = node.word[j]
             x = node.x+j*s
             if tuple(x+t) not in m and tuple(x-t) not in m:
-                before = measure_space(m,x,-t)
-                after  = measure_space(m,x, t)
+                before = measure_space(m,x,s,-t)
+                after  = measure_space(m,x,s, t)
                 if before or after:
                     starts.append((c,before,after,(i,x)))
     # Try all possible subsets everywhere
