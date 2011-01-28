@@ -4,7 +4,6 @@ import os
 import re
 from numpy import *
 import optparse
-import copy
 
 def read_words(max_length):
     words = open('words').read().lower().split()
@@ -94,18 +93,12 @@ directions = (array([1,0]),array([0,1]))
 class Node(object):
     __slots__ = ['word','x','d','parent','children']
 
-    def __init__(self,word,x,d,parent):
+    def __init__(self,word,x,d,parent,children):
         self.word = word
         self.x = array(x)
         self.d = d
         self.parent = parent
-        self.children = []
-
-    def __deepcopy__(self,m):
-        n = Node(self.word,self.x,self.d,self.parent)
-        for c in self.children:
-            n.children.append(copy.deepcopy(c,m))
-        return n
+        self.children = children
 
     def _map(self,m):
         d = directions[self.d]
@@ -141,8 +134,38 @@ class Node(object):
             for n in c.nodes():
                 yield n
 
-    def signature(self):
-        return (self.word,tuple(self.x),self.d,self.parent,tuple(c.signature() for c in self.children))
+    def __hash__(self):
+        return hash((self.word,tuple(self.x),self.d,self.parent,self.children))
+
+    def __eq__(self,other):
+        return self.word==other.word and all(self.x==other.x) and self.d==other.d and self.parent==other.parent and self.children==other.children
+
+    def add(self,x,d,child):
+        sd = self.d
+        sx = self.x
+        if sd!=d and sx[d]==x[d] and sx[sd]<=x[sd]<=sx[sd]+len(self.word)-1:
+            return Node(self.word,sx,sd,self.parent,self.children+(child,))
+        else:
+            for i,c in enumerate(self.children):
+                cp = c.add(x,d,child)
+                if cp is not c:
+                    return Node(self.word,self.x,self.d,self.parent,self.children[:i]+(cp,)+self.children[i+1:])
+            return self
+
+    def remove(self,node):
+        if self is node:
+            return None
+        for i,c in enumerate(self.children):
+            if c is node:
+                children = self.children[:i]+self.children[i+1:]
+                break
+            cp = c.remove(node)
+            if cp is not c:
+                children = self.children[:i]+(cp,)+self.children[i+1:]
+                break
+        else:
+            return self
+        return Node(self.word,self.x,self.d,self.parent,children)
 
 def print_tree(tree):
     m = tree.map()
@@ -167,34 +190,42 @@ def measure_space(m,x,s,t):
         space += 1
     return space
 
+start_cache = {}
+def tree_starts(m,tree):
+    key = frozenset(m.iterkeys())
+    try:
+        return start_cache[key]
+    except KeyError:
+        starts = []
+        for node in tree.nodes():
+            s,t = directions[node.d],directions[1-node.d]
+            for j in xrange(len(node.word)):
+                c = node.word[j]
+                x = node.x+j*s
+                if tuple(x+t) not in m and tuple(x-t) not in m:
+                    before = measure_space(m,x,s,-t)
+                    after  = measure_space(m,x,s, t)
+                    if before or after:
+                        starts.append((tuple(x),1-node.d,before,after))
+        start_cache[key] = tuple(starts)
+        return starts
+
 def grow_tree(tree,letters):
     # Build list of start points
     m = tree.map()
-    nodes = tuple(tree.nodes())
-    starts = []
-    for i,node in enumerate(nodes):
-        s,t = directions[node.d],directions[1-node.d]
-        for j in xrange(len(node.word)):
-            c = node.word[j]
-            x = node.x+j*s
-            if tuple(x+t) not in m and tuple(x-t) not in m:
-                before = measure_space(m,x,s,-t)
-                after  = measure_space(m,x,s, t)
-                if before or after:
-                    starts.append((c,before,after,(i,x)))
+    starts = tree_starts(m,tree)
     # Try all possible subsets everywhere
     for n in xrange(min(len(letters),max_length-1),0,-1):
         for subset in subsets(letters,n):
             subset = sort_word(subset)
-            for c,before,after,ix in starts:
+            for x,d,before,after in starts:
+                c = m[x]
                 for word in dictionary.get(c+subset,()):
                     for k in xrange(len(word)):
                         if word[k]==c and before>=k and after>=len(word)-1-k:
-                            i,x = ix
-                            new_tree = copy.deepcopy(tree)
-                            node = list(new_tree.nodes())[i]
-                            d = 1-node.d
-                            node.children.append(Node(word,x-k*directions[d],d,k))
+                            child = Node(word,x-k*directions[d],d,k,())
+                            new_tree = tree.add(x,d,child)
+                            assert new_tree is not tree
                             yield new_tree,subtract(letters,subset),word
 
 def singly_pruned_trees(tree,letters):
@@ -204,17 +235,13 @@ def singly_pruned_trees(tree,letters):
         if not node.children:
             new_letters = letters + node.word 
             if node.parent>=0:
-                new_tree = copy.deepcopy(tree) 
-                new_nodes = list(new_tree.nodes())
-                node = new_nodes[i]
-                parent, = [n for n in new_nodes if node in n.children]
-                parent.children.remove(node)
+                new_tree = tree.remove(node)
                 new_letters = subtract(new_letters,node.word[node.parent])
                 yield new_tree,new_letters,node.word
 
 def pruned_trees(tree,letters):
     done = set()
-    done.add(tree.signature())
+    done.add(tree)
     next = [(tree,letters,())]
     while 1:
         old,next = next,[]
@@ -222,19 +249,17 @@ def pruned_trees(tree,letters):
             for tt,ll,word in singly_pruned_trees(t,l):
                 next.append((tt,ll,words+(word,)))
         for t,l,w in next:
-            s = t.signature()
-            if s not in done:
-                done.add(s)
+            if t not in done:
+                done.add(t)
                 print 'maybe pruning %s (letters = %s)'%(', '.join(w),l)
-                yield copy.deepcopy(t),l,w
+                yield t,l,w
 
 def finish_tree(tree,letters,bad):
-    tree = copy.deepcopy(tree)
     if not letters:
         yield tree,[]
     else:
         for tree,letters,word in grow_tree(tree,letters):
-            s = tree.signature(),sort_word(letters)
+            s = tree,sort_word(letters)
             if s not in bad:
                 success = False
                 for tree,words in finish_tree(tree,letters,bad):
@@ -249,7 +274,7 @@ def greedily_expand_tree(tree,letters):
         w = random_word(letters)
         words.append(w)
         letters = subtract(letters,w)
-        tree = Node(w,(0,0),1,-1)
+        tree = Node(w,(0,0),1,-1,())
     while letters:
         try:
             tree,letters,word = grow_tree(tree,letters).next()
@@ -259,7 +284,7 @@ def greedily_expand_tree(tree,letters):
     return tree,letters,words
 
 def fix_tree(tree,letters):
-    bad = set([(tree.signature(),sort_word(letters))])
+    bad = set([(tree,sort_word(letters))])
     for tree,letters,pruned in pruned_trees(tree,letters):
         for tree,added in finish_tree(tree,letters,bad):
             print 'pruned %s'%', '.join(pruned)
@@ -315,7 +340,7 @@ def autoplay():
     for c in peels:
         tree = build_tree(tree,letters)
         letters = ''
-        s = hash((s,tree.signature()))
+        s = hash((s,tree))
         print 'hash =',s
         if c==' ':
             break
