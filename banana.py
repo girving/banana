@@ -326,7 +326,7 @@ if __name__=='__main__':
             print random_word(letters)
         else:
             build_tree(None,letters)
-    elif 1:
+    elif 0:
         random.seed(1731)
         autoplay()
     else:
