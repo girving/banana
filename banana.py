@@ -3,6 +3,7 @@
 import os
 import re
 from numpy import *
+import optparse
 import copy
 
 def read_words(max_length):
@@ -302,10 +303,16 @@ def play():
         pass
 
 def autoplay():
-    letters = 'iremkjuwlohdtdlttgrae'
+    if 0:
+        letters = 'iremkjuwlohdtdlttgrae'
+        peels = 'abcdefg '
+    else:
+        random.seed(164)
+        letters = 'tarvurgirriyeaiajikue'
+        peels = 'ynapdneetmlbhvnpiesoytninoqcsitedwlodujwotomo '
     tree = None
     s = None
-    for c in 'abcdefg ':
+    for c in peels:
         tree = build_tree(tree,letters)
         letters = ''
         s = hash((s,tree.signature()))
@@ -318,16 +325,15 @@ def autoplay():
         letters += c
 
 if __name__=='__main__':
-    if 0:
-        letters = 'retain'
-        letters = 'iremkjuwlohdtdlttgrae'
-        random.seed(1371)
-        if 0:
-            print random_word(letters)
-        else:
-            build_tree(None,letters)
-    elif 0:
+    usage = "usage: %prog [options...]"
+    parser = optparse.OptionParser(usage)
+    parser.add_option('-a','--auto',action='store_true',help='auto play')
+    options,args = parser.parse_args()
+    if args: parser.error('no arguments expected')
+
+    if options.auto:
         random.seed(1731)
         autoplay()
     else:
+        random.seed(164)
         play()
