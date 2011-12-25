@@ -308,7 +308,7 @@ def play():
     try:
         while 1:
             letters = raw_input('starting letters: ').lower()
-            if not re.match('^[a-z]{21,}$',letters):
+            if not re.match('^[a-z]{%d,}$'%options.number,letters):
                 print 'bad initial letters'
             else:
                 break
@@ -353,6 +353,7 @@ if __name__=='__main__':
     usage = "usage: %prog [options...]"
     parser = optparse.OptionParser(usage)
     parser.add_option('-a','--auto',action='store_true',help='auto play')
+    parser.add_option('-n','--number',type=int,default=9,help='number of letters to start with')
     options,args = parser.parse_args()
     if args: parser.error('no arguments expected')
 
