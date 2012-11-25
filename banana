@@ -40,7 +40,11 @@ def sort_word(word):
 # Build dictionary
 max_length = 7
 dictionary = {}
-for w in read_pruned_words(max_length):
+if 1:
+  words = read_words(max_length)
+else:
+  words = read_pruned_words(max_length)
+for w in words:
     sw = sort_word(w)
     dictionary[sw] = dictionary.get(sw,()) + (w,)
 print 'sorted word count =',len(dictionary)
